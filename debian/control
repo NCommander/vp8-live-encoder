@@ -1,0 +1,12 @@
+Source: vpxtestbench
+Section: video
+Priority: optional
+Maintainer: Michael Casadevall <mcasadevall@ubuntu.com>
+Build-Depends: debhelper (>= 8.0.0), libudt-dev, libvpx-realtime-dev
+Standards-Version: 3.9.4
+
+Package: vpxtestbench
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: A testbench of the vpx encoder
+ vpx test bench
