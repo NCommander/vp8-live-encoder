@@ -2061,6 +2061,10 @@ int main(int argc, const char **argv_) {
     die("destination port required\n");
   }
 
+  if (!argv[3]) {
+    die("stream id required\n");
+  }
+
   pthread_t stream_thread;
 
   webm_cluster_table = streamer_init();
@@ -2070,7 +2074,6 @@ int main(int argc, const char **argv_) {
   tri->ingest_port = atoi(argv[2]);
   tri->stream_id = argv[3];
 
-  pthread_create(&stream_thread, 0, stream_prepare, webm_cluster_table);
   pthread_create(&stream_thread, 0, stream_send, webm_cluster_table);
 
   /* Decide if other chroma subsamplings than 4:2:0 are supported */

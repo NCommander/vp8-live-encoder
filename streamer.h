@@ -64,10 +64,8 @@ void* streamer_init();
 cluster_page_t * streamer_get_free_allocation(void * webm_cluster_table);
 void stream_allocation_vpx_frame(void * webm_cluster_table, cluster_page_t *webm_cluster);
 void stream_allocation_ready(void * webm_cluster_table, cluster_page_t *webm_cluster);
-long stream_read_ring_buffer(void * webm_cluster_table, void * data_out, long len_wanted);
 
 void* stream_send(void * webm_cluster_table);
-void* stream_prepare(void * webm_cluster_table);
 
 #ifdef __cplusplus
 }
