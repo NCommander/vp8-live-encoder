@@ -26,10 +26,13 @@ typedef struct {
   long			id;
   int           status;
   int			length;
-  unsigned char * webm_cluster;
+  char * webm_cluster;
 } cluster_page_t;
 
 typedef struct {
+  char ip_address[255];
+  int ingest_port;
+  char * stream_id;
   int free_entries;
   int used_entries;
   int read_order[NUM_OF_ALLOCATIONS];
@@ -40,6 +43,7 @@ typedef struct {
   long ring_buffer_len;
   long ring_buffer_read_cursor;
   long ring_buffer_write_cursor;
+  pthread_mutex_t page_allocation_mutex;
   pthread_mutex_t ring_read_mutex;
   pthread_mutex_t ring_write_mutex;
   pthread_mutex_t webm_order_mutex;

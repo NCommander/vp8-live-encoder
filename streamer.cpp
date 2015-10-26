@@ -30,6 +30,7 @@ void * streamer_init() {
   pthread_mutex_init(&(tri->ring_read_mutex), NULL);
   pthread_mutex_init(&(tri->ring_write_mutex), NULL);
 
+  pthread_mutex_init(&(tri->page_allocation_mutex), NULL);
   pthread_mutex_init(&(tri->webm_order_mutex), NULL);
   pthread_mutex_init(&(tri->pending_webm_mutex), NULL);
   pthread_mutex_init(&(tri->pending_send_mutex), NULL);
@@ -60,14 +61,15 @@ void * streamer_init() {
 }
 
 /* Walks the cluster table and returns a free page */
-/* NOT thread-safe; needs a mutex if called from more than one location */
 cluster_page_t * streamer_get_free_allocation(void * webm_cluster_table) {
   table_reference_information_t * tri = (table_reference_information_t*)webm_cluster_table;
 
+    pthread_mutex_lock(&(tri->page_allocation_mutex));
     for (int i = 0; i != NUM_OF_ALLOCATIONS; i++) {
       cluster_page_t * cursor = &(tri->cluster_pages[i]);
       if (cursor->status == PAGE_FREE) {
         cursor->status = PAGE_PENDING;
+        pthread_mutex_unlock(&(tri->page_allocation_mutex));
         return cursor;
       }
     }
@@ -109,6 +111,7 @@ void* stream_process_webm_events(void * webm_cluster_table) {
 
 /* Writes data into the ring buffer */
 void stream_write_ring_buffer(void * webm_cluster_table, void * data, long len) {
+#if 0
     table_reference_information_t * tri = (table_reference_information_t*)webm_cluster_table;
 
     pthread_mutex_lock(&(tri->ring_read_mutex));
@@ -151,10 +154,12 @@ void stream_write_ring_buffer(void * webm_cluster_table, void * data, long len) 
     pthread_mutex_unlock(&(tri->pending_send_mutex));
 
     pthread_cond_signal(&(tri->pending_send_cond));
+#endif
 }
 
 /* Retrieves up to the requested amount of data from the ring buffer */
 long stream_read_ring_buffer(void * webm_cluster_table, void * data_out, long len_wanted) {
+#if 0
   table_reference_information_t * tri = (table_reference_information_t*)webm_cluster_table;
 
   pthread_mutex_lock(&(tri->ring_read_mutex));
@@ -193,6 +198,7 @@ long stream_read_ring_buffer(void * webm_cluster_table, void * data_out, long le
   /* And done! */
  pthread_mutex_unlock(&(tri->ring_read_mutex));
  return len_wanted;
+#endif
 }
 
 void* stream_send(void * webm_cluster_table) {
@@ -296,15 +302,15 @@ void* stream_send(void * webm_cluster_table) {
 
 void* stream_prepare(void * webm_cluster_table) {
   table_reference_information_t * tri = (table_reference_information_t*)webm_cluster_table;
-  short work_items[NUM_OF_ALLOCATIONS];
-  short work_items_elements;
+  int work_items[NUM_OF_ALLOCATIONS];
+  int work_items_elements;
 
   UDTSOCKET client = UDT::socket(AF_INET, SOCK_STREAM, 0);
 
   sockaddr_in serv_addr;
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(9000);
-  inet_pton(AF_INET, "96.126.124.51", &serv_addr.sin_addr);
+  serv_addr.sin_port = htons(tri->ingest_port);
+  inet_pton(AF_INET, tri->ip_address, &serv_addr.sin_addr);
 
   memset(&(serv_addr.sin_zero), '\0', 8);
 
@@ -313,6 +319,13 @@ void* stream_prepare(void * webm_cluster_table) {
 	  std::cout << "connect:" << UDT::getlasterror().getErrorMessage() << std::endl;
 	  exit(-2);
   }
+
+  // Send the stream id
+  char stream_command[255] = "STREAM \0";
+  strcat(stream_command, tri->stream_id);
+  printf("%s\n", stream_command);
+  UDT::send(client, stream_command, strlen(stream_command), 0);
+
 
   for ( ; ; ) {
     pthread_mutex_lock(&(tri->pending_webm_mutex));
@@ -325,21 +338,25 @@ void* stream_prepare(void * webm_cluster_table) {
 
     /* Get the list of items to process */
     pthread_mutex_lock(&(tri->webm_order_mutex));
-    memcpy(work_items, tri->read_order, sizeof(short)*NUM_OF_ALLOCATIONS);
+    memcpy(work_items, tri->read_order, sizeof(int)*NUM_OF_ALLOCATIONS);
     work_items_elements = tri->read_order_elements;
 
-    memset(tri->read_order, 0, sizeof(short)*NUM_OF_ALLOCATIONS);
+    memset(tri->read_order, 0, sizeof(int)*NUM_OF_ALLOCATIONS);
     tri->read_order_elements = 0;
     pthread_mutex_unlock(&(tri->webm_order_mutex));
 
-    char * transmission_buffer = (char*)malloc(work_items_elements*SIZE_OF_ALLOCATION);
+    //char * transmission_buffer = (char*)malloc(work_items_elements*SIZE_OF_ALLOCATION);
    // memset(transmission_buffer, 0xc, work_items_elements*SIZE_OF_ALLOCATION);
     int buffer_cursor = 0;
 
     /* Send things in order to the client */
     for (int i = 0; i < work_items_elements; i++) {
       int header_prefix_len = 0;
-      short work_item = work_items[i];
+      int work_item = work_items[i];
+      int ssize = 0;
+      int size = 0;
+      int ss;
+
       cluster_page_t * cursor = &(tri->cluster_pages[work_item]);
       if (cursor->status != PAGE_READY || cursor->webm_cluster == 0) {
         printf("%ld page got in queue without being ready\n", cursor->id);
@@ -359,39 +376,37 @@ void* stream_prepare(void * webm_cluster_table) {
       transmission_buffer[buffer_cursor] = 0x0a;
       buffer_cursor++;*/
 
-      memcpy(transmission_buffer, cursor->webm_cluster, cursor->length);
-      buffer_cursor += cursor->length;
+      //memcpy(transmission_buffer, cursor->webm_cluster, cursor->length);
+      //buffer_cursor += cursor->length;
       /*transmission_buffer[buffer_cursor] = 0x0d;
       buffer_cursor++;
       transmission_buffer[buffer_cursor] = 0x0a;
       buffer_cursor++;*/
 
+      size = cursor->length;
+      while (ssize < size)
+      {
+        if (UDT::ERROR == (ss = UDT::send(client, cursor->webm_cluster + ssize, size - ssize, 0)))
+        {
+          std::cout << "send:" << UDT::getlasterror().getErrorMessage() << std::endl;
+          exit(-1);
+        }
+
+        ssize += ss;
+      }
+
+
       /* Return the page to the queue */
 cleanup:
-      cursor->status = PAGE_FREE;
+      //free (transmission_buffer);
       if (cursor->webm_cluster) free(cursor->webm_cluster);
       cursor->webm_cluster = 0;
       cursor->length = 0;
+      cursor->status = PAGE_FREE;
     }
 
     //stream_write_ring_buffer(webm_cluster_table, transmission_buffer, buffer_cursor);
     //send(sock, transmission_buffer, buffer_cursor, 0);
-
-    int ssize = 0;
-    int size = buffer_cursor;
-    int ss;
-    while (ssize < size)
-    {
-      if (UDT::ERROR == (ss = UDT::send(client, transmission_buffer + ssize, size - ssize, 0)))
-      {
-        std::cout << "send:" << UDT::getlasterror().getErrorMessage() << std::endl;
-        exit(-1);
-      }
-
-      ssize += ss;
-    }
-
-    free (transmission_buffer);
 
   }
 

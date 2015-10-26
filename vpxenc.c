@@ -175,6 +175,8 @@ static const arg_def_t verbosearg = ARG_DEF(
     "v", "verbose", 0, "Show encoder parameters");
 static const arg_def_t psnrarg = ARG_DEF(
     NULL, "psnr", 0, "Show PSNR in status line");
+static const arg_def_t destip = ARG_DEF(
+    "d", "destination", 1, "Destination IP");
 
 static const struct arg_enum_list test_decode_enum[] = {
   {"off",   TEST_DECODE_OFF},
@@ -214,7 +216,7 @@ static const arg_def_t *main_args[] = {
   &outputfile, &codecarg, &passes, &pass_arg, &fpf_name, &limit, &skip,
   &deadline, &best_dl, &good_dl, &rt_dl,
   &quietarg, &verbosearg, &psnrarg, &use_webm, &use_ivf, &out_part, &q_hist_n,
-  &rate_hist_n, &disable_warnings, &disable_warning_prompt, &recontest,
+  &rate_hist_n, &disable_warnings, &disable_warning_prompt, &recontest, &destip,
   NULL
 };
 
@@ -1984,11 +1986,6 @@ int main(int argc, const char **argv_) {
   uint64_t cx_time = 0;
   int stream_cnt = 0;
   int res = 0;
-  pthread_t stream_thread;
-
-  webm_cluster_table = streamer_init();
-  pthread_create(&stream_thread, 0, stream_prepare, webm_cluster_table);
-  pthread_create(&stream_thread, 0, stream_send, webm_cluster_table);
 
   memset(&input, 0, sizeof(input));
   exec_name = argv_[0];
@@ -2055,6 +2052,26 @@ int main(int argc, const char **argv_) {
 
   if (!input.filename)
     usage_exit();
+
+  if (!argv[1]) {
+    die("destination ip required\n");
+  }
+
+  if (!argv[2]) {
+    die("destination port required\n");
+  }
+
+  pthread_t stream_thread;
+
+  webm_cluster_table = streamer_init();
+  table_reference_information_t * tri = (table_reference_information_t*)webm_cluster_table;
+
+  strncpy(tri->ip_address, argv[1], 254);
+  tri->ingest_port = atoi(argv[2]);
+  tri->stream_id = argv[3];
+
+  pthread_create(&stream_thread, 0, stream_prepare, webm_cluster_table);
+  pthread_create(&stream_thread, 0, stream_send, webm_cluster_table);
 
   /* Decide if other chroma subsamplings than 4:2:0 are supported */
   if (global.codec->fourcc == VP9_FOURCC)
